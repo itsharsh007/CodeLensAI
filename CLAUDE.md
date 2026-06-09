@@ -1,6 +1,13 @@
 # CodeLens AI
 
-A TypeScript full-stack app that analyzes any public GitHub repo through three lenses: **Map** (architecture dependency graph), **Guard** (security/threat model), **Morph** (AI refactor with diffs). React + Vite client in `/client`, Express server in `/server`.
+A TypeScript full-stack app that analyzes any public GitHub repo through three lenses: **Map** (architecture dependency graph), **Guard** (security/threat model), **Morph** (AI refactor with diffs).
+
+## Stack & layout
+
+- `/client` — React 19 + Vite 6 + TypeScript + Tailwind CSS v4 (`@tailwindcss/vite`, no config file) + Framer Motion + React Flow (`reactflow` v11). No router: `/r/:id` is parsed from `location.pathname`.
+- `/server` — Express 5 + TypeScript (ESM, `tsx` for dev) on :3001. `@anthropic-ai/sdk` + `@octokit/rest`.
+- All AI calls go through `server/src/llm.ts` `callLLM()` — the single provider seam. Model defaults to `claude-sonnet-4-6` (override with `ANTHROPIC_MODEL`).
+- Run: `npm run dev` at root (concurrently). Typecheck: `npm run typecheck`.
 
 ## Operating principles
 
@@ -18,3 +25,6 @@ A TypeScript full-stack app that analyzes any public GitHub repo through three l
 ## Lessons
 
 - This machine runs Node 20.17.0; Vite 7/8 require Node ≥20.19, so the client is pinned to vite@^6 + @vitejs/plugin-react@^4. Don't bump Vite without upgrading Node first.
+- The spec's model claude-sonnet-4-20250514 is deprecated (retires 2026-06-15); the official replacement claude-sonnet-4-6 is the default instead.
+- Writing a NUL escape inside a template literal in a Write tool call emits a literal NUL byte into the source file — escape it as `\u0000 (escaped)` (caught in graph.ts).
+- React 19 + eslint react-hooks forbids synchronous setState in a useEffect body — derive initial state in useState(init) instead.
