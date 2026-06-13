@@ -1,28 +1,26 @@
-import Groq from 'groq-sdk'
+import { GoogleGenerativeAI } from '@google/generative-ai'
 
-const DEFAULT_MODEL = 'llama-3.3-70b-versatile'
+const DEFAULT_MODEL = 'gemini-2.0-flash'
 
-let client: Groq | null = null
+let client: GoogleGenerativeAI | null = null
 
-function getClient(): Groq {
-  if (!process.env.GROQ_API_KEY) {
-    throw new Error('GROQ_API_KEY is not set in server/.env — AI lenses are unavailable.')
+function getClient(): GoogleGenerativeAI {
+  if (!process.env.GEMINI_API_KEY) {
+    throw new Error('GEMINI_API_KEY is not set in server/.env — AI lenses are unavailable.')
   }
-  if (!client) client = new Groq({ apiKey: process.env.GROQ_API_KEY })
+  if (!client) client = new GoogleGenerativeAI(process.env.GEMINI_API_KEY)
   return client
 }
 
-/** Single LLM entry point — swap provider by replacing this function only. */
-export async function callLLM(prompt: string, maxTokens = 8192): Promise<string> {
-  const response = await getClient().chat.completions.create({
-    model: process.env.GROQ_MODEL || DEFAULT_MODEL,
-    max_tokens: maxTokens,
-    messages: [{ role: 'user', content: prompt }],
+export async function callLLM(prompt: string): Promise<string> {
+  const model = getClient().getGenerativeModel({
+    model: process.env.GEMINI_MODEL || DEFAULT_MODEL,
+    generationConfig: { responseMimeType: 'application/json' },
   })
-  return response.choices[0]?.message?.content ?? ''
+  const result = await model.generateContent(prompt)
+  return result.response.text()
 }
 
-/** Strip markdown fences / surrounding prose and parse the first JSON object. */
 export function parseStrictJson<T>(raw: string): T {
   let text = raw.trim()
   const fenced = text.match(/```(?:json)?\s*([\s\S]*?)```/)
@@ -35,15 +33,13 @@ export function parseStrictJson<T>(raw: string): T {
   return JSON.parse(text.slice(start, end + 1)) as T
 }
 
-/** Run a structured call: parse strictly, retry once with a stern reminder on failure. */
-export async function structuredCall<T>(prompt: string, maxTokens = 8192): Promise<T> {
-  const first = await callLLM(prompt, maxTokens)
+export async function structuredCall<T>(prompt: string): Promise<T> {
+  const first = await callLLM(prompt)
   try {
     return parseStrictJson<T>(first)
   } catch {
     const retry = await callLLM(
       `${prompt}\n\nIMPORTANT: your previous answer was not valid JSON. Respond with a single valid JSON object only — no prose, no markdown fences.`,
-      maxTokens,
     )
     return parseStrictJson<T>(retry)
   }

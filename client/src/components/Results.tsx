@@ -13,6 +13,84 @@ const TABS: { id: Tab; label: string; hint: string }[] = [
   { id: 'morph', label: 'Morph', hint: 'Refactors' },
 ]
 
+function downloadJson(result: AnalysisResult) {
+  const blob = new Blob([JSON.stringify(result, null, 2)], { type: 'application/json' })
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = `${result.repoName.replace('/', '-')}-report.json`
+  a.click()
+  URL.revokeObjectURL(url)
+}
+
+function toMarkdown(result: AnalysisResult): string {
+  const lines: string[] = []
+  const repo = result.repoName
+
+  lines.push(`# CodeLens AI Report — ${repo}`)
+  lines.push(`> Generated ${new Date(result.createdAt).toUTCString()}`)
+  lines.push('')
+
+  // Architecture
+  if (result.architecture) {
+    lines.push('## 🗺️ Architecture')
+    lines.push(result.architecture.summary)
+    lines.push('')
+    lines.push('### Components')
+    for (const c of result.architecture.components)
+      lines.push(`- **${c.name}** — ${c.responsibility}`)
+    lines.push('')
+    lines.push('### Data Flows')
+    for (const f of result.architecture.dataFlows) lines.push(`- ${f}`)
+    lines.push('')
+  }
+
+  // Security
+  if (result.security) {
+    lines.push(`## 🛡️ Security (Risk Score: ${result.security.riskScore}/100)`)
+    lines.push('')
+    lines.push('### Threats')
+    for (const t of result.security.threats)
+      lines.push(`- **[${t.severity.toUpperCase()}] ${t.id} — ${t.strideCategory}** (${t.component})\n  - Vector: ${t.vector}\n  - Mitigation: ${t.mitigation}`)
+    lines.push('')
+    lines.push('### Findings')
+    for (const f of result.security.findings)
+      lines.push(`- **[${f.severity.toUpperCase()}]** \`${f.file}:${f.line}\` — ${f.issue}\n  - Fix: ${f.recommendation}`)
+    lines.push('')
+  }
+
+  // Refactors
+  if (result.refactor) {
+    lines.push('## 🔬 Refactors')
+    for (const s of result.refactor.smells) {
+      lines.push(`### ${s.id} — ${s.issue}`)
+      lines.push(`**File:** \`${s.file}\``)
+      lines.push(`**Rationale:** ${s.rationale}`)
+      lines.push('```')
+      lines.push('// Before')
+      lines.push(s.originalSnippet)
+      lines.push('```')
+      lines.push('```')
+      lines.push('// After')
+      lines.push(s.refactoredSnippet)
+      lines.push('```')
+      lines.push('')
+    }
+  }
+
+  return lines.join('\n')
+}
+
+function downloadMarkdown(result: AnalysisResult) {
+  const blob = new Blob([toMarkdown(result)], { type: 'text/markdown' })
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = `${result.repoName.replace('/', '-')}-report.md`
+  a.click()
+  URL.revokeObjectURL(url)
+}
+
 export default function Results({
   result,
   readOnly,
@@ -55,12 +133,26 @@ export default function Results({
           )}
         </div>
         {!readOnly && (
-          <button
-            onClick={share}
-            className="rounded-lg border border-neutral-300 bg-white px-4 py-2 text-sm font-medium text-neutral-700 transition hover:border-accent hover:text-accent"
-          >
-            {shareCopied ? '✓ Link copied' : 'Share'}
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => downloadJson(result)}
+              className="rounded-lg border border-neutral-300 bg-white px-4 py-2 text-sm font-medium text-neutral-700 transition hover:border-accent hover:text-accent"
+            >
+              ↓ JSON
+            </button>
+            <button
+              onClick={() => downloadMarkdown(result)}
+              className="rounded-lg border border-neutral-300 bg-white px-4 py-2 text-sm font-medium text-neutral-700 transition hover:border-accent hover:text-accent"
+            >
+              ↓ Markdown
+            </button>
+            <button
+              onClick={share}
+              className="rounded-lg border border-neutral-300 bg-white px-4 py-2 text-sm font-medium text-neutral-700 transition hover:border-accent hover:text-accent"
+            >
+              {shareCopied ? '✓ Link copied' : 'Share'}
+            </button>
+          </div>
         )}
       </header>
 
