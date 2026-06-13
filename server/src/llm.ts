@@ -1,24 +1,24 @@
-import { GoogleGenerativeAI } from '@google/generative-ai'
+import Groq from 'groq-sdk'
 
-const DEFAULT_MODEL = 'gemini-2.0-flash'
+const DEFAULT_MODEL = 'llama-3.3-70b-versatile'
 
-let client: GoogleGenerativeAI | null = null
+let client: Groq | null = null
 
-function getClient(): GoogleGenerativeAI {
-  if (!process.env.GEMINI_API_KEY) {
-    throw new Error('GEMINI_API_KEY is not set in server/.env — AI lenses are unavailable.')
+function getClient(): Groq {
+  if (!process.env.GROQ_API_KEY) {
+    throw new Error('GROQ_API_KEY is not set in server/.env — AI lenses are unavailable.')
   }
-  if (!client) client = new GoogleGenerativeAI(process.env.GEMINI_API_KEY)
+  if (!client) client = new Groq({ apiKey: process.env.GROQ_API_KEY })
   return client
 }
 
-export async function callLLM(prompt: string): Promise<string> {
-  const model = getClient().getGenerativeModel({
-    model: process.env.GEMINI_MODEL || DEFAULT_MODEL,
-    generationConfig: { responseMimeType: 'application/json' },
+export async function callLLM(prompt: string, maxTokens = 1024): Promise<string> {
+  const response = await getClient().chat.completions.create({
+    model: process.env.GROQ_MODEL || DEFAULT_MODEL,
+    max_tokens: maxTokens,
+    messages: [{ role: 'user', content: prompt }],
   })
-  const result = await model.generateContent(prompt)
-  return result.response.text()
+  return response.choices[0]?.message?.content ?? ''
 }
 
 export function parseStrictJson<T>(raw: string): T {
@@ -33,13 +33,14 @@ export function parseStrictJson<T>(raw: string): T {
   return JSON.parse(text.slice(start, end + 1)) as T
 }
 
-export async function structuredCall<T>(prompt: string): Promise<T> {
-  const first = await callLLM(prompt)
+export async function structuredCall<T>(prompt: string, maxTokens = 1024): Promise<T> {
+  const first = await callLLM(prompt, maxTokens)
   try {
     return parseStrictJson<T>(first)
   } catch {
     const retry = await callLLM(
       `${prompt}\n\nIMPORTANT: your previous answer was not valid JSON. Respond with a single valid JSON object only — no prose, no markdown fences.`,
+      maxTokens,
     )
     return parseStrictJson<T>(retry)
   }

@@ -25,11 +25,23 @@ function downloadJson(result: AnalysisResult) {
 
 function toMarkdown(result: AnalysisResult): string {
   const lines: string[] = []
-  const repo = result.repoName
 
-  lines.push(`# CodeLens AI Report — ${repo}`)
+  lines.push(`# CodeLens AI Report — ${result.repoName}`)
   lines.push(`> Generated ${new Date(result.createdAt).toUTCString()}`)
+  lines.push(`> Repo: ${result.repoUrl}`)
   lines.push('')
+
+  // File list
+  lines.push('## 📁 Files Analysed')
+  lines.push(result.files.map((f) => `- \`${f.path}\``).join('\n'))
+  lines.push('')
+
+  // Dependency graph
+  if (result.graph.edges.length > 0) {
+    lines.push('## 🔗 Dependency Graph')
+    lines.push(result.graph.edges.map((e) => `- \`${e.source}\` → \`${e.target}\``).join('\n'))
+    lines.push('')
+  }
 
   // Architecture
   if (result.architecture) {
@@ -64,7 +76,7 @@ function toMarkdown(result: AnalysisResult): string {
     lines.push('## 🔬 Refactors')
     for (const s of result.refactor.smells) {
       lines.push(`### ${s.id} — ${s.issue}`)
-      lines.push(`**File:** \`${s.file}\``)
+      lines.push(`**File:** \`${s.file}\`  `)
       lines.push(`**Rationale:** ${s.rationale}`)
       lines.push('```')
       lines.push('// Before')
