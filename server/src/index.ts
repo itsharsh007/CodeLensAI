@@ -15,10 +15,14 @@ import type { AnalysisResult } from './types.js'
 const app = express()
 const PORT = process.env.PORT ? Number(process.env.PORT) : 3001
 
-// Allow the Vite dev server origin
+// Allow local dev + production client (set CLIENT_URL env var on Render)
 app.use(
   cors({
-    origin: ['http://localhost:5173', 'http://127.0.0.1:5173'],
+    origin: [
+      'http://localhost:5173',
+      'http://127.0.0.1:5173',
+      ...(process.env.CLIENT_URL ? [process.env.CLIENT_URL] : []),
+    ],
   }),
 )
 app.use(express.json())
