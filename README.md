@@ -1,116 +1,125 @@
+<div align="center">
+
+<img src="client/public/favicon.svg" alt="CodeLens AI" width="80" />
+
 # CodeLens AI
 
-Analyze any public GitHub repo through three lenses:
+**X-ray vision for any public GitHub repository.**
 
-- **Map** — interactive architecture / dependency graph
-- **Guard** — AI security & threat-model report (STRIDE)
-- **Morph** — AI-detected code smells with side-by-side refactor diffs
+[![TypeScript](https://img.shields.io/badge/TypeScript-5-3178C6?style=flat-square&logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
+[![React](https://img.shields.io/badge/React-19-61DAFB?style=flat-square&logo=react&logoColor=black)](https://react.dev/)
+[![Groq](https://img.shields.io/badge/AI-Groq-F55036?style=flat-square)](https://console.groq.com/)
+[![License](https://img.shields.io/badge/license-MIT-22c55e?style=flat-square)](LICENSE)
+
+Paste a GitHub URL. Get a full architecture map, an AI-powered STRIDE threat model, and actionable refactor suggestions — in seconds.
+
+</div>
+
+---
+
+## ✨ Three Lenses
+
+| 🗺️ **Map** | 🛡️ **Guard** | 🔬 **Morph** |
+|---|---|---|
+| Interactive dependency graph of every file and its imports | STRIDE threat model with per-finding severity and mitigations | Code-smell detection with side-by-side before/after diffs |
 
 ## Screenshots
 
-| Landing | Map lens |
+| Landing | Map |
 |---|---|
 | ![Landing](docs/screenshots/landing.png) | ![Map](docs/screenshots/map.png) |
 
 ![Node drawer](docs/screenshots/map-drawer.png)
 
-*(Guard and Morph render AI results once `ANTHROPIC_API_KEY` is configured; without it the
-graph still works and those tabs show a clear "analysis unavailable" state.)*
+> Guard and Morph require a `GROQ_API_KEY`. Without one the graph still works and those tabs show a clear "analysis unavailable" state.
 
-## Stack
+---
 
-| Part   | Tech |
-|--------|------|
-| Client | React 19, Vite, TypeScript, Tailwind CSS v4, Framer Motion, React Flow |
-| Server | Node.js, Express 5, TypeScript, Anthropic SDK, Octokit |
+## 🏗️ Stack
 
-## Setup
+| Layer | Tech |
+|-------|------|
+| **Client** | React 19, Vite, TypeScript, Tailwind CSS v4, Framer Motion, React Flow |
+| **Server** | Node.js, Express 5, TypeScript, Groq SDK (`llama-3.3-70b-versatile`), Octokit |
 
-1. **Install dependencies**
+---
 
-   ```sh
-   npm install            # root (concurrently)
-   npm install --prefix client
-   npm install --prefix server
-   ```
+## 🚀 Quick Start
 
-2. **Configure environment**
+### 1 — Install
 
-   ```sh
-   cp server/.env.example server/.env
-   ```
+```sh
+npm install
+npm install --prefix client
+npm install --prefix server
+```
 
-   Fill in:
-   - `ANTHROPIC_API_KEY` — from https://platform.claude.com/
-   - `GITHUB_TOKEN` — a read-only personal access token for public repos
-     (GitHub → Settings → Developer settings → Personal access tokens).
-     Optional but recommended: without it you get GitHub's 60 req/hr anonymous limit.
-   - `ANTHROPIC_MODEL` — optional model override (default `claude-sonnet-4-6`).
+### 2 — Configure
 
-3. **Run both apps**
+```sh
+cp server/.env.example server/.env
+```
 
-   ```sh
-   npm run dev
-   ```
+| Variable | Required | Description |
+|----------|----------|-------------|
+| `GROQ_API_KEY` | ✅ | Get one free at [console.groq.com](https://console.groq.com/) |
+| `GITHUB_TOKEN` | Recommended | Read-only PAT — avoids GitHub's 60 req/hr anonymous limit |
+| `GROQ_MODEL` | Optional | Override the default model (`llama-3.3-70b-versatile`) |
 
-   - Client: http://localhost:5173
-   - Server: http://localhost:3001 (health check: `GET /api/health` → `{ "ok": true }`)
+### 3 — Run
 
-   Or run them separately with `npm run dev:client` / `npm run dev:server`.
+```sh
+npm run dev
+```
 
-## Scripts
+| Service | URL |
+|---------|-----|
+| Client | http://localhost:5173 |
+| Server | http://localhost:3001 |
+| Health | `GET /api/health` → `{ "ok": true }` |
 
-| Command | What it does |
-|---------|--------------|
-| `npm run dev` | Run client + server together |
-| `npm run dev:client` | Vite dev server on :5173 |
-| `npm run dev:server` | Express (tsx watch) on :3001 |
-| `npm run typecheck` | Typecheck both packages |
+---
 
-## Architecture notes
+## 🛠️ Scripts
+
+```sh
+npm run dev          # client + server together
+npm run dev:client   # Vite only on :5173
+npm run dev:server   # Express (tsx watch) on :3001
+npm run typecheck    # tsc on both packages
+```
+
+---
+
+## 🧠 How It Works
 
 ```
 client (React/Vite :5173)                server (Express :3001)
-┌────────────────────────┐   POST /api/analyze   ┌─────────────────────────────┐
-│ App — state machine    │ ───────────────────▶  │ github.ts  Octokit: tree +  │
-│  idle/loading/done/err │                       │            blobs (≤50 src)  │
-│ Results — 3 tabs       │                       │ graph.ts   import parsing → │
-│  MapView (React Flow)  │                       │            { nodes, edges } │
-│  GuardView (gauge,     │                       │ analysis.ts 3 structured    │
-│   STRIDE, findings)    │  ◀───────────────────  │  LLM calls (allSettled)    │
-│  MorphView (diffs)     │   AnalysisResult JSON │ llm.ts     callLLM() —      │
-│ /r/:id read-only route │                       │  single provider seam       │
-└────────────────────────┘   GET /api/report/:id │ cache.ts   10-min TTL Map   │
-                                                 └─────────────────────────────┘
+┌────────────────────────┐  POST /api/analyze  ┌──────────────────────────────┐
+│  App — state machine   │ ──────────────────▶ │ github.ts   fetch git tree   │
+│  idle/loading/done/err │                     │             + blobs (≤50)    │
+│                        │                     │ graph.ts    import parsing → │
+│  Results — 3 tabs      │                     │             { nodes, edges } │
+│  ├─ MapView            │                     │ analysis.ts 3 Groq calls     │
+│  ├─ GuardView          │ ◀────────────────── │             (allSettled)     │
+│  └─ MorphView          │  AnalysisResult     │ llm.ts      single provider  │
+│                        │                     │             seam             │
+│  /r/:id  read-only     │  GET /api/report/id │ cache.ts    10-min TTL       │
+└────────────────────────┘                     └──────────────────────────────┘
 ```
 
-- **Repo fetch** (`server/src/github.ts`) — parses `owner/repo` from the URL, pulls the
-  git tree of the default branch, filters to `.js .jsx .ts .tsx .py` (max 50 files,
-  skipping `node_modules/dist/build`, `.d.ts`, minified and >200 KB files, preferring
-  shallow paths), and base64-decodes the blobs. GitHub errors map to clean HTTP statuses
-  (400 invalid URL, 404 private/missing, 429 rate-limited).
-- **Dependency graph** (`server/src/graph.ts`) — regex-extracts `import` / `require` /
-  `from` specifiers (JS/TS and Python), resolves *local* imports against the fetched
-  file set (extension + `index.*` + `__init__.py` candidates), and infers a node type
-  (`component | route | util | config | other`) from the path.
-- **AI lenses** (`server/src/analysis.ts`, `llm.ts`) — three independent structured
-  calls (architecture, STRIDE threat model, refactors) sharing one truncated code
-  context (≤5 KB/file, ≤150 KB total). Every call goes through a single `callLLM()`,
-  so swapping Claude for another provider is a one-function change. Responses must be
-  strict JSON; parsing strips markdown fences and retries once on failure. The calls
-  run with `Promise.allSettled` — if one lens fails, the graph and other lenses still
-  return, with the error reported per-lens in `aiErrors`.
-- **Caching & sharing** (`server/src/cache.ts`) — results live in an in-memory map for
-  10 minutes, keyed both by repo URL (so re-analyzing is instant) and by a short hex id
-  served from `GET /api/report/:id`. The client's Share button copies `/r/:id`, which
-  loads the saved report read-only. Share links expire with the cache.
-- **Client** — no router dependency: `/r/:id` is parsed from `location.pathname`
-  (Vite's SPA fallback serves `index.html` for it). The dependency graph is laid out
-  with a longest-path layering (left → right), and the Morph diff is a hand-rolled LCS
-  line alignment rendered as paired red/green rows.
+**Repo fetch** — pulls the git tree of the default branch, filters to `.js .jsx .ts .tsx .py` (max 50 files, skipping `node_modules`, `dist`, `.d.ts`, minified and >200 KB files, preferring shallow paths).
 
-## Limitations
+**Dependency graph** — regex-extracts `import` / `require` / `from` specifiers and resolves local imports, inferring a node type (`component | route | util | config | other`) from the path.
 
-- Analysis covers at most 50 source files per repo (shallowest paths first).
-- Share links live 10 minutes (in-memory cache; restart clears reports).
-- Only public repos are supported.
+**AI lenses** — three independent structured Groq calls sharing one truncated code context (≤800 chars/file, ≤8 KB total). Strict JSON output with a parse-and-retry guard. `Promise.allSettled` means a failed lens never blocks the others.
+
+**Caching & sharing** — results cached 10 minutes in-memory, keyed by repo URL and a short hex report ID. The Share button copies `/r/:id` as a read-only link.
+
+---
+
+## ⚠️ Limitations
+
+- Max **50 source files** per repo (shallowest paths first)
+- Share links expire after **10 minutes** (in-memory; restart clears all reports)
+- **Public repos only**

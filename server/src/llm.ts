@@ -1,33 +1,25 @@
-import Anthropic from '@anthropic-ai/sdk'
+import Groq from 'groq-sdk'
 
-// NOTE: the spec named claude-sonnet-4-20250514, which is deprecated and retires
-// on 2026-06-15. claude-sonnet-4-6 is its official drop-in replacement.
-const DEFAULT_MODEL = 'claude-sonnet-4-6'
+const DEFAULT_MODEL = 'llama-3.3-70b-versatile'
 
-let client: Anthropic | null = null
+let client: Groq | null = null
 
-function getClient(): Anthropic {
-  if (!process.env.ANTHROPIC_API_KEY) {
-    throw new Error('ANTHROPIC_API_KEY is not set in server/.env — AI lenses are unavailable.')
+function getClient(): Groq {
+  if (!process.env.GROQ_API_KEY) {
+    throw new Error('GROQ_API_KEY is not set in server/.env — AI lenses are unavailable.')
   }
-  if (!client) client = new Anthropic()
+  if (!client) client = new Groq({ apiKey: process.env.GROQ_API_KEY })
   return client
 }
 
-/**
- * Single LLM entry point. Swap the provider (Gemini/Groq/OpenAI/...) by replacing
- * the body of this function — nothing else in the codebase touches an AI SDK.
- */
+/** Single LLM entry point — swap provider by replacing this function only. */
 export async function callLLM(prompt: string, maxTokens = 8192): Promise<string> {
-  const response = await getClient().messages.create({
-    model: process.env.ANTHROPIC_MODEL ?? DEFAULT_MODEL,
+  const response = await getClient().chat.completions.create({
+    model: process.env.GROQ_MODEL || DEFAULT_MODEL,
     max_tokens: maxTokens,
     messages: [{ role: 'user', content: prompt }],
   })
-  return response.content
-    .filter((block): block is Anthropic.TextBlock => block.type === 'text')
-    .map((block) => block.text)
-    .join('')
+  return response.choices[0]?.message?.content ?? ''
 }
 
 /** Strip markdown fences / surrounding prose and parse the first JSON object. */

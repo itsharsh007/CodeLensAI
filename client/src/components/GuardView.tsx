@@ -1,5 +1,6 @@
+import { useState } from 'react'
 import { motion } from 'framer-motion'
-import type { AnalysisResult, StrideCategory, Threat } from '../types'
+import type { AnalysisResult, Severity, StrideCategory, Threat } from '../types'
 import { SeverityBadge } from './Badge'
 
 const STRIDE_ORDER: StrideCategory[] = [
@@ -20,25 +21,33 @@ const STRIDE_LABELS: Record<StrideCategory, string> = {
   ElevationOfPrivilege: 'Elevation of Privilege',
 }
 
+const SEVERITY_ORDER: Severity[] = ['critical', 'high', 'medium', 'low']
+
+const SEVERITY_COLORS: Record<Severity, string> = {
+  critical: '#dc2626',
+  high: '#ea580c',
+  medium: '#d97706',
+  low: '#059669',
+}
+
 function riskColor(score: number): string {
-  if (score >= 70) return '#dc2626' // red
-  if (score >= 40) return '#d97706' // amber
-  return '#059669' // green
+  if (score >= 70) return '#dc2626'
+  if (score >= 40) return '#d97706'
+  return '#059669'
 }
 
 function riskLabel(score: number): string {
-  if (score >= 70) return 'High risk'
-  if (score >= 40) return 'Moderate risk'
-  return 'Low risk'
+  if (score >= 70) return 'High Risk'
+  if (score >= 40) return 'Moderate Risk'
+  return 'Low Risk'
 }
 
-/** Semi-circular SVG gauge with a green→amber→red band. */
 function RiskGauge({ score }: { score: number }) {
   const clamped = Math.max(0, Math.min(100, score))
   const r = 80
   const cx = 100
   const cy = 95
-  const angle = Math.PI * (1 - clamped / 100) // PI (left, 0) → 0 (right, 100)
+  const angle = Math.PI * (1 - clamped / 100)
   const needleX = cx + r * 0.72 * Math.cos(angle)
   const needleY = cy - r * 0.72 * Math.sin(angle)
 
@@ -79,10 +88,11 @@ function RiskGauge({ score }: { score: number }) {
         <circle cx={cx} cy={cy} r={5} fill="#171717" />
       </svg>
       <div className="-mt-2 text-center">
-        <div className="text-3xl font-bold" style={{ color: riskColor(clamped) }}>
+        <div className="text-4xl font-bold tabular-nums" style={{ color: riskColor(clamped) }}>
           {clamped}
+          <span className="text-lg text-neutral-400">/100</span>
         </div>
-        <div className="text-xs font-medium uppercase tracking-wide text-neutral-500">
+        <div className="mt-1 text-xs font-semibold uppercase tracking-widest" style={{ color: riskColor(clamped) }}>
           {riskLabel(clamped)}
         </div>
       </div>
@@ -90,8 +100,65 @@ function RiskGauge({ score }: { score: number }) {
   )
 }
 
+function SeverityBar({ findings }: { findings: AnalysisResult['security'] }) {
+  if (!findings) return null
+  const counts = SEVERITY_ORDER.map((sev) => ({
+    sev,
+    count: findings.findings.filter((f) => f.severity === sev).length,
+  }))
+  const total = counts.reduce((s, c) => s + c.count, 0)
+  if (total === 0) return null
+
+  return (
+    <div className="w-full">
+      <div className="mb-2 flex h-2.5 overflow-hidden rounded-full bg-neutral-100">
+        {counts.map(({ sev, count }) =>
+          count > 0 ? (
+            <motion.div
+              key={sev}
+              initial={{ width: 0 }}
+              animate={{ width: `${(count / total) * 100}%` }}
+              transition={{ duration: 0.6, ease: 'easeOut', delay: 0.3 }}
+              style={{ backgroundColor: SEVERITY_COLORS[sev] }}
+            />
+          ) : null,
+        )}
+      </div>
+      <div className="flex flex-wrap justify-center gap-4">
+        {counts.map(({ sev, count }) => (
+          <div key={sev} className="flex items-center gap-1.5 text-xs">
+            <span className="h-2 w-2 rounded-full" style={{ backgroundColor: SEVERITY_COLORS[sev] }} />
+            <span className="font-semibold text-neutral-700">{count}</span>
+            <span className="capitalize text-neutral-500">{sev}</span>
+          </div>
+        ))}
+      </div>
+    </div>
+  )
+}
+
+function downloadReport(result: AnalysisResult) {
+  const payload = {
+    repo: result.repoName,
+    analyzedAt: result.createdAt,
+    riskScore: result.security?.riskScore,
+    threats: result.security?.threats,
+    findings: result.security?.findings,
+  }
+  const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' })
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = `${result.repoName.replace('/', '-')}-security-report.json`
+  a.click()
+  URL.revokeObjectURL(url)
+}
+
 export default function GuardView({ result }: { result: AnalysisResult }) {
   const security = result.security
+  const [severityFilter, setSeverityFilter] = useState<Severity | 'all'>('all')
+  const [strideFilter, setStrideFilter] = useState<StrideCategory | 'all'>('all')
+  const [expandedThreat, setExpandedThreat] = useState<string | null>(null)
 
   if (!security) {
     return (
@@ -104,51 +171,142 @@ export default function GuardView({ result }: { result: AnalysisResult }) {
     )
   }
 
+  const filteredFindings = security.findings.filter(
+    (f) => severityFilter === 'all' || f.severity === severityFilter,
+  )
+
+  const filteredThreats = security.threats.filter(
+    (t) => strideFilter === 'all' || t.strideCategory === strideFilter,
+  )
+
   const grouped = STRIDE_ORDER.map((category) => ({
     category,
-    threats: security.threats.filter((t) => t.strideCategory === category),
+    threats: filteredThreats.filter((t) => t.strideCategory === category),
   })).filter((g) => g.threats.length > 0)
 
-  // Anything with an unexpected category still gets shown
   const known = new Set<string>(STRIDE_ORDER)
-  const uncategorized = security.threats.filter((t) => !known.has(t.strideCategory))
+  const uncategorized = filteredThreats.filter((t) => !known.has(t.strideCategory))
 
   return (
-    <div className="space-y-8">
-      <div className="flex flex-col items-center gap-2 rounded-xl border border-neutral-200 bg-white py-6">
-        <h3 className="text-xs font-semibold uppercase tracking-wide text-neutral-400">
-          Overall risk score
-        </h3>
-        <RiskGauge score={security.riskScore} />
+    <div className="space-y-6">
+      {/* Score + stats card */}
+      <div className="flex flex-col items-center gap-6 rounded-xl border border-neutral-200 bg-white px-8 py-6 sm:flex-row sm:items-start">
+        <div className="shrink-0">
+          <h3 className="mb-2 text-center text-xs font-semibold uppercase tracking-wide text-neutral-400">
+            Risk Score
+          </h3>
+          <RiskGauge score={security.riskScore} />
+        </div>
+        <div className="flex-1 space-y-4">
+          <div>
+            <h3 className="mb-3 text-xs font-semibold uppercase tracking-wide text-neutral-400">
+              Findings breakdown
+            </h3>
+            <SeverityBar findings={security} />
+          </div>
+          <div className="grid grid-cols-2 gap-3 text-center sm:grid-cols-4">
+            {SEVERITY_ORDER.map((sev) => {
+              const count = security.findings.filter((f) => f.severity === sev).length
+              return (
+                <button
+                  key={sev}
+                  onClick={() => setSeverityFilter(severityFilter === sev ? 'all' : sev)}
+                  className={`rounded-lg border px-3 py-2 transition ${
+                    severityFilter === sev
+                      ? 'border-current bg-neutral-900 text-white'
+                      : 'border-neutral-200 hover:border-neutral-300'
+                  }`}
+                >
+                  <div className="text-xl font-bold tabular-nums" style={{ color: severityFilter === sev ? 'white' : SEVERITY_COLORS[sev] }}>
+                    {count}
+                  </div>
+                  <div className="mt-0.5 text-xs capitalize text-neutral-500">{sev}</div>
+                </button>
+              )
+            })}
+          </div>
+          <div className="flex justify-end">
+            <button
+              onClick={() => downloadReport(result)}
+              className="flex items-center gap-1.5 rounded-lg border border-neutral-300 px-3 py-1.5 text-xs font-medium text-neutral-600 transition hover:border-accent hover:text-accent"
+            >
+              ↓ Export JSON report
+            </button>
+          </div>
+        </div>
       </div>
 
+      {/* Threats */}
       <section>
-        <h3 className="mb-3 text-sm font-semibold text-neutral-900">
-          Threat model <span className="font-normal text-neutral-400">(STRIDE)</span>
-        </h3>
-        {security.threats.length === 0 ? (
+        <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
+          <h3 className="text-sm font-semibold text-neutral-900">
+            Threat model <span className="font-normal text-neutral-400">(STRIDE)</span>
+          </h3>
+          <div className="flex flex-wrap gap-1.5">
+            <FilterChip label="All" active={strideFilter === 'all'} onClick={() => setStrideFilter('all')} />
+            {STRIDE_ORDER.filter((cat) => security.threats.some((t) => t.strideCategory === cat)).map((cat) => (
+              <FilterChip
+                key={cat}
+                label={STRIDE_LABELS[cat].split(' ')[0]}
+                active={strideFilter === cat}
+                onClick={() => setStrideFilter(strideFilter === cat ? 'all' : cat)}
+              />
+            ))}
+          </div>
+        </div>
+        {filteredThreats.length === 0 ? (
           <p className="rounded-xl border border-dashed border-neutral-300 bg-white py-8 text-center text-sm text-neutral-500">
-            No threats identified.
+            No threats match this filter.
           </p>
         ) : (
-          <div className="space-y-5">
+          <div className="space-y-4">
             {grouped.map(({ category, threats }) => (
-              <ThreatGroup key={category} title={STRIDE_LABELS[category]} threats={threats} />
+              <ThreatGroup
+                key={category}
+                title={STRIDE_LABELS[category]}
+                threats={threats}
+                expandedId={expandedThreat}
+                onToggle={setExpandedThreat}
+              />
             ))}
-            {uncategorized.length > 0 && <ThreatGroup title="Other" threats={uncategorized} />}
+            {uncategorized.length > 0 && (
+              <ThreatGroup
+                title="Other"
+                threats={uncategorized}
+                expandedId={expandedThreat}
+                onToggle={setExpandedThreat}
+              />
+            )}
           </div>
         )}
       </section>
 
+      {/* Findings */}
       <section>
-        <h3 className="mb-3 text-sm font-semibold text-neutral-900">Findings</h3>
-        {security.findings.length === 0 ? (
+        <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
+          <h3 className="text-sm font-semibold text-neutral-900">
+            Code findings <span className="font-normal text-neutral-400">({filteredFindings.length})</span>
+          </h3>
+          <div className="flex flex-wrap gap-1.5">
+            <FilterChip label="All" active={severityFilter === 'all'} onClick={() => setSeverityFilter('all')} />
+            {SEVERITY_ORDER.filter((sev) => security.findings.some((f) => f.severity === sev)).map((sev) => (
+              <FilterChip
+                key={sev}
+                label={sev}
+                active={severityFilter === sev}
+                color={SEVERITY_COLORS[sev]}
+                onClick={() => setSeverityFilter(severityFilter === sev ? 'all' : sev)}
+              />
+            ))}
+          </div>
+        </div>
+        {filteredFindings.length === 0 ? (
           <p className="rounded-xl border border-dashed border-neutral-300 bg-white py-8 text-center text-sm text-neutral-500">
-            No code-level findings.
+            No findings match this filter.
           </p>
         ) : (
           <ul className="space-y-3">
-            {security.findings.map((finding, i) => (
+            {filteredFindings.map((finding, i) => (
               <motion.li
                 key={`${finding.file}-${finding.line}-${i}`}
                 initial={{ opacity: 0, y: 8 }}
@@ -176,34 +334,76 @@ export default function GuardView({ result }: { result: AnalysisResult }) {
   )
 }
 
-function ThreatGroup({ title, threats }: { title: string; threats: Threat[] }) {
+function FilterChip({
+  label,
+  active,
+  color,
+  onClick,
+}: {
+  label: string
+  active: boolean
+  color?: string
+  onClick: () => void
+}) {
+  return (
+    <button
+      onClick={onClick}
+      className={`rounded-full border px-2.5 py-0.5 text-xs font-medium capitalize transition ${
+        active
+          ? 'border-neutral-900 bg-neutral-900 text-white'
+          : 'border-neutral-200 text-neutral-600 hover:border-neutral-400'
+      }`}
+      style={active && color ? { backgroundColor: color, borderColor: color } : undefined}
+    >
+      {label}
+    </button>
+  )
+}
+
+function ThreatGroup({
+  title,
+  threats,
+  expandedId,
+  onToggle,
+}: {
+  title: string
+  threats: Threat[]
+  expandedId: string | null
+  onToggle: (id: string | null) => void
+}) {
   return (
     <div className="overflow-hidden rounded-xl border border-neutral-200 bg-white">
       <div className="border-b border-neutral-200 bg-neutral-50 px-4 py-2 text-xs font-semibold uppercase tracking-wide text-neutral-500">
         {title} · {threats.length}
       </div>
-      <table className="w-full text-left text-sm">
-        <thead>
-          <tr className="border-b border-neutral-100 text-xs text-neutral-400">
-            <th className="px-4 py-2 font-medium">Severity</th>
-            <th className="px-4 py-2 font-medium">Component</th>
-            <th className="px-4 py-2 font-medium">Attack vector</th>
-            <th className="px-4 py-2 font-medium">Mitigation</th>
-          </tr>
-        </thead>
-        <tbody>
-          {threats.map((threat) => (
-            <tr key={threat.id} className="border-b border-neutral-100 align-top last:border-0">
-              <td className="px-4 py-3">
-                <SeverityBadge severity={threat.severity} />
-              </td>
-              <td className="px-4 py-3 font-mono text-xs text-neutral-700">{threat.component}</td>
-              <td className="px-4 py-3 text-neutral-700">{threat.vector}</td>
-              <td className="px-4 py-3 text-neutral-600">{threat.mitigation}</td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
+      <div className="divide-y divide-neutral-100">
+        {threats.map((threat) => (
+          <div key={threat.id}>
+            <button
+              onClick={() => onToggle(expandedId === threat.id ? null : threat.id)}
+              className="flex w-full items-start gap-3 px-4 py-3 text-left hover:bg-neutral-50"
+            >
+              <SeverityBadge severity={threat.severity} />
+              <div className="min-w-0 flex-1">
+                <p className="font-mono text-xs text-neutral-500">{threat.component}</p>
+                <p className="mt-0.5 text-sm text-neutral-800">{threat.vector}</p>
+              </div>
+              <span className={`shrink-0 text-neutral-400 transition-transform ${expandedId === threat.id ? 'rotate-90' : ''}`}>›</span>
+            </button>
+            {expandedId === threat.id && (
+              <motion.div
+                initial={{ height: 0, opacity: 0 }}
+                animate={{ height: 'auto', opacity: 1 }}
+                exit={{ height: 0, opacity: 0 }}
+                className="border-t border-neutral-100 bg-emerald-50 px-4 py-3"
+              >
+                <p className="text-xs font-semibold uppercase tracking-wide text-emerald-700">Mitigation</p>
+                <p className="mt-1 text-sm text-emerald-900">{threat.mitigation}</p>
+              </motion.div>
+            )}
+          </div>
+        ))}
+      </div>
     </div>
   )
 }

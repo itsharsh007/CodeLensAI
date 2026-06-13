@@ -7,8 +7,8 @@ import type {
   SecurityReport,
 } from './types.js'
 
-const PER_FILE_CHAR_LIMIT = 5_000
-const TOTAL_CHAR_BUDGET = 150_000
+const PER_FILE_CHAR_LIMIT = 800
+const TOTAL_CHAR_BUDGET = 8_000
 
 /** Compact code context: file list + truncated contents within a total budget. */
 function buildCodeContext(files: RepoFile[], graph: DependencyGraph): string {
@@ -55,7 +55,7 @@ Analyze the architecture and return JSON with exactly this shape:
 }
 
 Include 3-8 components and 2-6 dataFlows. ${JSON_ONLY}`
-  return structuredCall<ArchitectureReport>(prompt, 4096)
+  return structuredCall<ArchitectureReport>(prompt, 2048)
 }
 
 export async function analyzeSecurity(
@@ -88,7 +88,7 @@ Return JSON with exactly this shape:
 
 Include 4-10 threats covering multiple STRIDE categories, and up to 10 concrete findings
 referencing real files from the list. Be specific to THIS codebase, not generic. ${JSON_ONLY}`
-  return structuredCall<SecurityReport>(prompt, 8192)
+  return structuredCall<SecurityReport>(prompt, 3000)
 }
 
 export async function analyzeRefactors(
@@ -113,7 +113,7 @@ Find the ~10 most impactful code smells and return JSON with exactly this shape:
 
 Rules: originalSnippet must be real code from the files above (verbatim). Keep snippets focused —
 the smallest unit that demonstrates the smell. Order by impact, most impactful first. ${JSON_ONLY}`
-  return structuredCall<RefactorReport>(prompt, 16000)
+  return structuredCall<RefactorReport>(prompt, 3000)
 }
 
 export { buildCodeContext }

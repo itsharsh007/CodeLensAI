@@ -49,11 +49,14 @@ app.post('/api/analyze', async (req, res) => {
     const repoName = `${owner}/${repo}`
     const context = buildCodeContext(files, graph)
 
-    const [architecture, security, refactor] = await Promise.allSettled([
-      analyzeArchitecture(repoName, context),
-      analyzeSecurity(repoName, context),
-      analyzeRefactors(repoName, context),
-    ])
+    // Sequential calls to stay within Groq free-tier TPM limits
+    const settled = async <T>(fn: () => Promise<T>): Promise<PromiseSettledResult<T>> => {
+      try { return { status: 'fulfilled', value: await fn() } }
+      catch (reason) { return { status: 'rejected', reason } }
+    }
+    const architecture = await settled(() => analyzeArchitecture(repoName, context))
+    const security     = await settled(() => analyzeSecurity(repoName, context))
+    const refactor     = await settled(() => analyzeRefactors(repoName, context))
 
     const aiErrors: AnalysisResult['aiErrors'] = {}
     if (architecture.status === 'rejected') {
